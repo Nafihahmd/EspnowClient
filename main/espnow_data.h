@@ -19,6 +19,7 @@
 #define ESPNOW_WIFI_IF   ESP_IF_WIFI_AP
 #endif
 
+//#MAC_SELF e4:b3:23:b6:a8:08
 #define ESPNOW_QUEUE_SIZE           6
 #define ESPNOW_MAXDELAY             512
 

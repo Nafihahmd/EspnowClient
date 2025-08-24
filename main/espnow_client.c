@@ -33,7 +33,7 @@
 static const char *TAG = "espnow_client";
 
 /* Global Variables */
-#define HEARTBEAT_INTERVAL_MS (20 * 1000) // unused as sensor-event based; kept if needed
+#define HEARTBEAT_INTERVAL_MS (10 * 1000) // unused as sensor-event based; kept if needed
 
 uint8_t s_my_mac[6];
 uint8_t s_broadcast_mac[ESP_NOW_ETH_ALEN] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
@@ -46,10 +46,7 @@ void mac_to_str(const uint8_t *mac, char *str, size_t len) {
     snprintf(str, len, "%02X:%02X:%02X:%02X:%02X:%02X",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
-// bool is_broadcast_mac(const uint8_t *mac) {
-//     return memcmp(mac, s_broadcast_mac, ESP_NOW_ETH_ALEN) == 0;
-// }
-
+void espnow_json_cmd_handler(const char *json);
 
 /* WiFi should start before using ESPNOW */
 void wifi_init(void)
@@ -175,6 +172,7 @@ static void espnow_deinit(espnow_send_param_t *send_param)
 
 
 /* ----------- Heartbeat task ----------*/
+/* Registering logic is also handled by this task*/
 static void heartbeat_task(void *arg) {
     const TickType_t interval = pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS);
     while (1) {
@@ -191,6 +189,17 @@ static void heartbeat_task(void *arg) {
             // ensure_peer_and_send(s_gateway_mac, s);
             espnow_send_json(s_gateway_mac, o);
             // cJSON_free(s);
+            cJSON_Delete(o);
+        }
+        else {
+            // send discovery broadcast            
+            char macstr[18];
+            ESP_LOGI(TAG, "Sending register broadcast (gateway unknown)");
+            mac_to_str(s_my_mac, macstr, sizeof(macstr));
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddStringToObject(o, "mac", macstr);
+            cJSON_AddStringToObject(o, "type", "register");
+            espnow_send_json(s_broadcast_mac, o);
             cJSON_Delete(o);
         }
         vTaskDelay(interval);
@@ -216,27 +225,31 @@ static void espnow_task(void *pvParameter)
             case ESPNOW_RECV_CB:
             {
                 espnow_event_recv_cb_t *recv_cb = &evt.info.recv_cb;
+                ESP_LOGI(TAG, "Receive data from: "MACSTR", len: %d", 
+                         MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
                 
                 if (espnow_data_parse(recv_cb->data, recv_cb->data_len, &data_type) == 0) {
+                    espnow_data_t *buf = (espnow_data_t *)recv_cb->data;
+                    int payload_len = recv_cb->data_len - sizeof(espnow_data_t);
                     if (data_type == ESPNOW_DATA_BROADCAST && !gateway_known) {
                         ESP_LOGI(TAG, "Receive broadcast data from: "MACSTR", len: %d", 
                                  MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
-
-                        // Add peer if not exists
-                        if (esp_now_is_peer_exist(recv_cb->mac_addr) == false) {
-                            esp_now_peer_info_t peer;
-                            memset(&peer, 0, sizeof(esp_now_peer_info_t));
-                            peer.channel = CONFIG_ESPNOW_CHANNEL;
-                            peer.ifidx = ESPNOW_WIFI_IF;
-                            peer.encrypt = true;
-                            memcpy(peer.lmk, CONFIG_ESPNOW_LMK, ESP_NOW_KEY_LEN);
-                            memcpy(peer.peer_addr, recv_cb->mac_addr, ESP_NOW_ETH_ALEN);
-                            ESP_ERROR_CHECK(esp_now_add_peer(&peer));
-                        }
-                        nvs_store_gateway_mac(recv_cb->mac_addr);
-                    } else if (data_type == ESPNOW_DATA_UNICAST) {                                            
-                        espnow_data_t *buf = (espnow_data_t *)recv_cb->data;
-                        int payload_len = recv_cb->data_len - sizeof(espnow_data_t);
+                        
+                        if (payload_len > 0) {
+                            // Add null terminator to make it a valid C string
+                            char *json_str = malloc(payload_len + 1);
+                            if (json_str) {
+                                memcpy(json_str, buf->payload, payload_len);
+                                json_str[payload_len] = '\0';
+                                
+                                // Parse and print the JSON
+                                // cJSON *root = cJSON_Parse(json_str);
+                                espnow_json_cmd_handler(json_str);
+                            }
+                        
+                        }// nvs_store_gateway_mac(recv_cb->mac_addr);
+                    } 
+                    else if (data_type == ESPNOW_DATA_UNICAST) {  
                         ESP_LOGI(TAG, "Receive unicast data from: "MACSTR", len: %d", 
                                  MAC2STR(recv_cb->mac_addr), recv_cb->data_len);
                         
@@ -258,6 +271,7 @@ static void espnow_task(void *pvParameter)
                                     ESP_LOGI(TAG, "Received data (not JSON): %s", json_str);
                                 }
                             }
+                            espnow_json_cmd_handler(json_str);
                             free(json_str);
                                 
                         }
@@ -290,6 +304,7 @@ esp_err_t espnow_send_json(const uint8_t *mac_addr, cJSON *json)
         ESP_LOGE(TAG, "Failed to print JSON");
         return ESP_FAIL;
     }
+    ESP_LOGI(TAG, "Sending JSON: %s", json_str);
     
     size_t json_len = strlen(json_str);
     size_t total_len = sizeof(espnow_data_t) + json_len;
@@ -316,7 +331,9 @@ esp_err_t espnow_send_json(const uint8_t *mac_addr, cJSON *json)
     
     // Send the data
     esp_err_t err = esp_now_send(send_param.dest_mac, send_param.buffer, send_param.len);
-    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Send failed: %s", esp_err_to_name(err));
+    }
     // Clean up
     free(buffer);
     free(json_str);
@@ -380,7 +397,7 @@ esp_err_t espnow_init(void)
     memcpy(send_param->dest_mac, s_broadcast_mac, ESP_NOW_ETH_ALEN);
 
     xTaskCreate(espnow_task, "espnow_task", 2048, send_param, 4, NULL);
-    xTaskCreate(heartbeat_task, "heartbeat_task", 2048, NULL, 5, NULL);
+    xTaskCreate(heartbeat_task, "heartbeat_task", 4096, NULL, 5, NULL);
 
     return ESP_OK;
 }
@@ -474,6 +491,34 @@ void espnow_json_cmd_handler(const char *json) {
                             }
                         }
                         it = it->next;
+                    }
+                }
+            }
+            else if (strcmp(type->valuestring, "register_ack")==0) {
+                // gateway accepted our register - save its mac
+                cJSON *mac = cJSON_GetObjectItem(root, "mac");
+                if (cJSON_IsString(mac)) {
+                    ESP_LOGI(TAG, "Received register_ack from gateway %s", mac->valuestring);
+                    uint8_t gwmac[6];
+                    if (sscanf(mac->valuestring, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+                               &gwmac[0], &gwmac[1], &gwmac[2], &gwmac[3], &gwmac[4], &gwmac[5]) == 6) {
+                        memcpy(s_gateway_mac, gwmac, 6);
+                        // Add peer if not exists
+                        if (esp_now_is_peer_exist(gwmac) == false) {
+                            esp_now_peer_info_t peer;
+                            memset(&peer, 0, sizeof(esp_now_peer_info_t));
+                            peer.channel = CONFIG_ESPNOW_CHANNEL;
+                            peer.ifidx = ESPNOW_WIFI_IF;
+                            peer.encrypt = true;
+                            memcpy(peer.lmk, CONFIG_ESPNOW_LMK, ESP_NOW_KEY_LEN);
+                            memcpy(peer.peer_addr, gwmac, ESP_NOW_ETH_ALEN);
+                            ESP_ERROR_CHECK(esp_now_add_peer(&peer));
+                        }
+                        gateway_known = true;
+                        nvs_store_gateway_mac(s_gateway_mac);
+                        ESP_LOGI(TAG, "Gateway MAC saved to NVS");
+                    } else {
+                        ESP_LOGW(TAG, "Invalid MAC format in register_ack");
                     }
                 }
             }

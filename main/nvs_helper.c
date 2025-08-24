@@ -82,7 +82,7 @@ esp_err_t nvs_erase_gateway_mac(void) {
     if (r == ESP_OK) {
         gateway_known = false;
         memset(s_gateway_mac, 0, 6);
-        ESP_LOGI(TAG, "Erased gateway MAC from NVS");
+        // ESP_LOGI(TAG, "Erased gateway MAC from NVS");
     }
     return r;
 }

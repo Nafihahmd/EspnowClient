@@ -23,7 +23,7 @@
 #include "espnow_data.h"
 #include "nvs_helper.h"
 
-static const char *TAG = "espnow_client";
+static const char *TAG = "main";
 
 // #define REGISTER_INTERVAL_MS   (30 * 1000)    // when gateway unknown, send register every 30s
 #define GPIO_DOUBLE_PRESS      GPIO_NUM_9
@@ -49,13 +49,6 @@ static void IRAM_ATTR gpio_isr_handler(void* arg) {
                 // Erase gateway to rediscover
                 nvs_erase_gateway_mac();
             }
-            else {
-                ESP_LOGI(TAG, "Double press -> sending register broadcast (discover gateway)");
-                // ensure_peer_and_send(s_broadcast_mac, s);
-                // if (register_timer) xTimerStart(register_timer, 0);
-            }
-            // cJSON_free(s);
-            // cJSON_Delete(o);
         }
         last_press_ts = now;
     }
@@ -106,9 +99,9 @@ void app_main(void) {
     }
 
     // print device mac
-    esp_efuse_mac_get_default(s_my_mac);
-    mac_to_str(s_my_mac, macs, sizeof(macs));
-    ESP_LOGI(TAG, "Client MAC: %s", macs);
+    // esp_efuse_mac_get_default(s_my_mac);
+    esp_read_mac(s_my_mac, ESP_MAC_WIFI_STA);
+    // mac_to_str(s_my_mac, macs, sizeof(macs));
 
     // setup GPIO ISR for double press
     gpio_config_t io_conf = {0};
@@ -125,14 +118,5 @@ void app_main(void) {
     espnow_init();
     // led task
     xTaskCreate(led_task, "led_task", 2048, NULL, 5, &led_task_handle);
-
-    // wifi_espnow_init();
-
-    // periodic register timer (only active if gateway unknown)
-    // register_timer = xTimerCreate("reg_t", pdMS_TO_TICKS(REGISTER_INTERVAL_MS), pdTRUE, NULL, register_timer_cb);
-    // if (register_timer) xTimerStart(register_timer, 0);
-    
-    // heartbeat task
-    // xTaskCreate(heartbeat_task, "heartbeat_task", 2048, NULL,5, &hb_task_handle);
     ESP_LOGI(TAG, "Client ready. Gateway_known=%s", gateway_known?"yes":"no");
 }
