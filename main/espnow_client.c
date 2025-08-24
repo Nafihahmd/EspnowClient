@@ -185,7 +185,7 @@ static void heartbeat_task(void *arg) {
             cJSON_AddStringToObject(o, "type", "heartbeat");
             cJSON_AddNumberToObject(o, "sensorValue", 2.2); // dummy value
             // char *s = cJSON_PrintUnformatted(o);
-            ESP_LOGI(TAG, "Sending heartbeat to gateway");
+            // ESP_LOGI(TAG, "Sending heartbeat to gateway");
             // ensure_peer_and_send(s_gateway_mac, s);
             espnow_send_json(s_gateway_mac, o);
             // cJSON_free(s);
@@ -374,6 +374,17 @@ esp_err_t espnow_init(void)
     memcpy(peer.peer_addr, s_broadcast_mac, ESP_NOW_ETH_ALEN);
     ESP_ERROR_CHECK(esp_now_add_peer(&peer));
 
+    /* Add Already saved gateway */
+    if (gateway_known) {
+        memset(&peer, 0, sizeof(esp_now_peer_info_t));
+        peer.channel = CONFIG_ESPNOW_CHANNEL;
+        peer.ifidx = ESPNOW_WIFI_IF;
+        peer.encrypt = true;
+        memcpy(peer.lmk, CONFIG_ESPNOW_LMK, ESP_NOW_KEY_LEN);
+        memcpy(peer.peer_addr, s_gateway_mac, ESP_NOW_ETH_ALEN);
+        ESP_ERROR_CHECK(esp_now_add_peer(&peer));
+    }
+
     /* Initialize sending parameters. */
     send_param = malloc(sizeof(espnow_send_param_t));
     if (send_param == NULL) {
@@ -398,7 +409,6 @@ esp_err_t espnow_init(void)
 
     xTaskCreate(espnow_task, "espnow_task", 2048, send_param, 4, NULL);
     xTaskCreate(heartbeat_task, "heartbeat_task", 4096, NULL, 5, NULL);
-
     return ESP_OK;
 }
 
