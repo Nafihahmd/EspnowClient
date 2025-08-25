@@ -175,6 +175,7 @@ static void espnow_deinit(espnow_send_param_t *send_param)
 /* Registering logic is also handled by this task*/
 static void heartbeat_task(void *arg) {
     const TickType_t interval = pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS);
+    bool sensor_state = false;
     while (1) {
         if (gateway_known) {
             // send heartbeat to gateway
@@ -187,6 +188,8 @@ static void heartbeat_task(void *arg) {
             // char *s = cJSON_PrintUnformatted(o);
             // ESP_LOGI(TAG, "Sending heartbeat to gateway");
             // ensure_peer_and_send(s_gateway_mac, s);
+            sensor_state = !sensor_state;
+            espnow_client_send_sensor_event(sensor_state, 1.0);
             espnow_send_json(s_gateway_mac, o);
             // cJSON_free(s);
             cJSON_Delete(o);
@@ -444,7 +447,7 @@ esp_err_t espnow_send_data(const uint8_t *mac_addr, const uint8_t *data, uint16_
 /* Call this function to send an event-based sensor reading to gateway.
    Example payload: payload JSON object should contain "mac" field automatically filled in.
    Returns ESP_OK on send attempt. */
-esp_err_t espnow_client_send_sensor_event(cJSON *payload_obj) {
+esp_err_t espnow_client_send_sensor_event(bool status, uint32_t value) {
     if (!gateway_known) {
         ESP_LOGW(TAG, "Gateway unknown - cannot send sensor event");
         return ESP_ERR_INVALID_STATE;
@@ -452,15 +455,13 @@ esp_err_t espnow_client_send_sensor_event(cJSON *payload_obj) {
     // attach mac and wrap
     char macstr[18];
     mac_to_str(s_my_mac, macstr, sizeof(macstr));
-    cJSON_AddStringToObject(payload_obj, "mac", macstr);
 
     cJSON *o = cJSON_CreateObject();
-    cJSON_AddStringToObject(o, "type", "sensor");
-    cJSON_AddItemToObject(o, "payload", cJSON_Duplicate(payload_obj, 1));
-    cJSON_AddTrueToObject(o, "status");
-    // char *s = cJSON_PrintUnformatted(o);
+    cJSON_AddStringToObject(o, "mac", macstr);
+    cJSON_AddStringToObject(o, "type", "sensor_event");
+    cJSON_AddStringToObject(o, "motionDetected", status?"true":"false");
+    cJSON_AddItemToObject(o, "SensorValue", cJSON_CreateNumber(value));
     esp_err_t r = espnow_send_json(s_gateway_mac, o);
-    // cJSON_free(s);
     cJSON_Delete(o);
     return r;
 }
@@ -472,7 +473,7 @@ void espnow_json_cmd_handler(const char *json) {
     if (root) {
         cJSON *type = cJSON_GetObjectItem(root, "type");
         if (cJSON_IsString(type)) {
-            if (strcmp(type->valuestring, "config_response") == 0) {
+           /* if (strcmp(type->valuestring, "config_response") == 0) {
                 cJSON *pl = cJSON_GetObjectItem(root, "payload");
                 if (pl) {
                     for (int i=0;i<CFG_COUNT;i++) {
@@ -484,7 +485,7 @@ void espnow_json_cmd_handler(const char *json) {
                         }
                     }
                 }
-            } else if (strcmp(type->valuestring, "set_config")==0) {
+            } else*/ if (strcmp(type->valuestring, "set_config")==0) {
                 cJSON *cfg = cJSON_GetObjectItem(root, "configurations");
                 if (cfg) {
                     cJSON *it = cfg->child;

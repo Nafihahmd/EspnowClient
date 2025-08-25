@@ -93,4 +93,5 @@ void wifi_init(void);
 esp_err_t espnow_init(void);
 esp_err_t espnow_send_json(const uint8_t *mac_addr, cJSON *json);
 void mac_to_str(const uint8_t *mac, char *str, size_t len);
+esp_err_t espnow_client_send_sensor_event(bool status, uint32_t value);
 #endif /*ESPNOW_EXAMPLE_H*/
