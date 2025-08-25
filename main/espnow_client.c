@@ -33,7 +33,7 @@
 static const char *TAG = "espnow_client";
 
 /* Global Variables */
-#define HEARTBEAT_INTERVAL_MS (10 * 1000) // unused as sensor-event based; kept if needed
+#define HEARTBEAT_INTERVAL_MS (60 * 1000) // unused as sensor-event based; kept if needed
 
 uint8_t s_my_mac[6];
 uint8_t s_broadcast_mac[ESP_NOW_ETH_ALEN] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
@@ -407,7 +407,7 @@ esp_err_t espnow_init(void)
     
     memcpy(send_param->dest_mac, s_broadcast_mac, ESP_NOW_ETH_ALEN);
 
-    xTaskCreate(espnow_task, "espnow_task", 2048, send_param, 4, NULL);
+    xTaskCreate(espnow_task, "espnow_task", 8192, send_param, 4, NULL);
     xTaskCreate(heartbeat_task, "heartbeat_task", 4096, NULL, 5, NULL);
     return ESP_OK;
 }
@@ -485,9 +485,9 @@ void espnow_json_cmd_handler(const char *json) {
                     }
                 }
             } else if (strcmp(type->valuestring, "set_config")==0) {
-                cJSON *pl = cJSON_GetObjectItem(root, "payload");
-                if (pl) {
-                    cJSON *it = pl->child;
+                cJSON *cfg = cJSON_GetObjectItem(root, "configurations");
+                if (cfg) {
+                    cJSON *it = cfg->child;
                     while (it) {
                         if (cJSON_IsNumber(it)) {
                             // accept cfg0..cfg4
@@ -535,8 +535,6 @@ void espnow_json_cmd_handler(const char *json) {
         }
         cJSON_Delete(root);
     }
-
-    free(json);
 }
 
 
