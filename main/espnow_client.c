@@ -33,8 +33,7 @@
 static const char *TAG = "espnow_client";
 
 /* Global Variables */
-#define HEARTBEAT_INTERVAL_MS (60 * 1000) // unused as sensor-event based; kept if needed
-
+#define HEARTBEAT_INTERVAL_MS (5 * 1000) // unused as sensor-event based; kept if needed
 uint8_t s_my_mac[6];
 uint8_t s_broadcast_mac[ESP_NOW_ETH_ALEN] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 uint8_t s_gateway_mac[6];
@@ -175,7 +174,7 @@ static void espnow_deinit(espnow_send_param_t *send_param)
 /* Registering logic is also handled by this task*/
 static void heartbeat_task(void *arg) {
     const TickType_t interval = pdMS_TO_TICKS(HEARTBEAT_INTERVAL_MS);
-    bool sensor_state = false;
+    // bool sensor_state = false;
     while (1) {
         if (gateway_known) {
             // send heartbeat to gateway
@@ -188,8 +187,8 @@ static void heartbeat_task(void *arg) {
             // char *s = cJSON_PrintUnformatted(o);
             // ESP_LOGI(TAG, "Sending heartbeat to gateway");
             // ensure_peer_and_send(s_gateway_mac, s);
-            sensor_state = !sensor_state;
-            espnow_client_send_sensor_event(sensor_state, 1.0);
+            // sensor_state = !sensor_state;
+            // espnow_client_send_sensor_event(sensor_state, 1.0);
             espnow_send_json(s_gateway_mac, o);
             // cJSON_free(s);
             cJSON_Delete(o);
