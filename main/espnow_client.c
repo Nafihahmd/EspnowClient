@@ -472,19 +472,15 @@ void espnow_json_cmd_handler(const char *json) {
     if (root) {
         cJSON *type = cJSON_GetObjectItem(root, "type");
         if (cJSON_IsString(type)) {
-           /* if (strcmp(type->valuestring, "config_response") == 0) {
-                cJSON *pl = cJSON_GetObjectItem(root, "payload");
-                if (pl) {
-                    for (int i=0;i<CFG_COUNT;i++) {
-                        char k[8]; snprintf(k, sizeof(k), "cfg%d", i);
-                        cJSON *it = cJSON_GetObjectItem(pl, k);
-                        if (cJSON_IsNumber(it)) {
-                            nvs_set_cfg(i, it->valueint);
-                            ESP_LOGI(TAG, "Saved %s=%d", k, it->valueint);
-                        }
-                    }
-                }
-            } else*/ if (strcmp(type->valuestring, "set_config")==0) {
+            if (strcmp(type->valuestring, "system_reset") == 0) {
+                ESP_LOGW(TAG, "Received reset command. Rebooting...");
+                            
+                // Add a small delay to ensure the log message is sent
+                vTaskDelay(pdMS_TO_TICKS(10));
+                
+                // Perform immediate reset
+                esp_restart();
+            } else if (strcmp(type->valuestring, "set_config")==0) {
                 cJSON *cfg = cJSON_GetObjectItem(root, "configurations");
                 if (cfg) {
                     cJSON *it = cfg->child;
